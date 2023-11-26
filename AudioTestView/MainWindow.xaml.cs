@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -17,7 +19,10 @@ namespace AudioTestView;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private static Int16[] levels;
+    private static TcpClient server = new TcpClient("26.59.160.203", 10101);
+    private static NetworkStream serverStream = server.GetStream();
+    private static Int16[] levels = new short[882];
+    private static byte[] rawSound;
     public MainWindow()
     {
         InitializeComponent();
@@ -56,10 +61,22 @@ public partial class MainWindow : Window
         // copy buffer into an array of integers
         Int16[] values = new Int16[e.Buffer.Length / 2];
         Buffer.BlockCopy(e.Buffer, 0, values, 0, e.Buffer.Length);
-
+        rawSound = e.Buffer;
         // determine the highest value as a fraction of the maximum possible value
         float fraction = (float)values.Max() / 32768;
         MainWindow.levels = values;
+        SendSound();
+
     }
-    
+
+    static void SendSound()
+    {
+        // return;
+        serverStream.Write(rawSound);
+    }
+
+    private void MainWindow_OnClosed(object? sender, EventArgs e)
+    {
+        server.Close();
+    }
 }
