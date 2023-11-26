@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private byte[] rawSound;
     private DateTime updateTime;
     private bool socketLoaded;
+    private int max;
     public MainWindow()
     {
         InitializeComponent();
@@ -58,6 +59,8 @@ public partial class MainWindow : Window
             {
                 SLInd.Fill = new SolidColorBrush(Colors.Red);
             }
+
+            MaxInd.Text = max.ToString();
         };
         levelUpdate.Start();
     }
@@ -79,8 +82,10 @@ public partial class MainWindow : Window
             var buffed = new byte[4096];
             int len = server.Receive(buffed);
             buffed = buffed[..len];
-
             updateTime = DateTime.Now;
+            var values = new short[buffed.Length / 2];
+            Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
+            max = values.Max();
             ms.AddSamples(buffed, 0, len);
         }
     }
