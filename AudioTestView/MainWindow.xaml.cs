@@ -1,14 +1,9 @@
-﻿using System.Net;
+﻿using System.Globalization;
+using NAudio.Wave;
 using System.Net.Sockets;
-using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -19,10 +14,12 @@ namespace AudioTestView;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private static TcpClient server = new TcpClient("26.59.160.203", 10101);
-    private static NetworkStream serverStream = server.GetStream();
-    private static Int16[] levels = new short[882];
-    private static byte[] rawSound;
+    private Socket server;
+    //private static NetworkStream serverStream = server.GetStream();
+    private Int16[] levels = new short[882];
+    private byte[] rawSound;
+    private DateTime updateTime;
+    private bool socketLoaded;
     public MainWindow()
     {
         InitializeComponent();
@@ -30,7 +27,7 @@ public partial class MainWindow : Window
         for (int i = 0; i < cols; i++)
         {
             TestGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            var vertical = new Rectangle(){Fill = new SolidColorBrush(Colors.Chocolate), StrokeThickness = 0};
+            var vertical = new Rectangle() { Fill = new SolidColorBrush(Colors.Chocolate), StrokeThickness = 0 };
             TestGrid.Children.Add(vertical);
             Grid.SetColumn(vertical, i);
         }
@@ -42,20 +39,52 @@ public partial class MainWindow : Window
         };
         waveIn.DataAvailable += WaveIn_DataAvailable;
         waveIn.StartRecording();
+        Task.Run(NetworkHandle);
 
-        DispatcherTimer levelUpdate = new DispatcherTimer();
-        levelUpdate.Interval = TimeSpan.FromMilliseconds(50);
+        DispatcherTimer levelUpdate = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(50),
+        };
         levelUpdate.Tick += (sender, args) =>
         {
             double total = TestGrid.ActualHeight;
-            for (int i = 0; i < MainWindow.levels.Length; i++)
+            for (int i = 0; i < levels.Length; i++)
             {
                 (TestGrid.Children[i] as Rectangle)!.Height = Math.Max(total * levels[i] / 32768 * 2, 0);
+            }
+            Indicator.Text = updateTime.ToString(CultureInfo.InvariantCulture);
+
+            if (socketLoaded)
+            {
+                SLInd.Fill = new SolidColorBrush(Colors.Red);
             }
         };
         levelUpdate.Start();
     }
-    
+
+
+    void NetworkHandle()
+    {
+        server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        server.Connect("26.59.160.203", 10101);
+
+        BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
+        var wo = new WaveOutEvent();
+        wo.Init(ms);
+        wo.Play();
+
+
+        while (server.Connected)
+        {
+            var buffed = new byte[4096];
+            int len = server.Receive(buffed);
+            buffed = buffed[..len];
+
+            updateTime = DateTime.Now;
+            ms.AddSamples(buffed, 0, len);
+        }
+    }
+
     void WaveIn_DataAvailable(object? sender, NAudio.Wave.WaveInEventArgs e)
     {
         // copy buffer into an array of integers
@@ -64,19 +93,22 @@ public partial class MainWindow : Window
         rawSound = e.Buffer;
         // determine the highest value as a fraction of the maximum possible value
         float fraction = (float)values.Max() / 32768;
-        MainWindow.levels = values;
+        levels = values;
         SendSound();
 
     }
 
-    static void SendSound()
+    void SendSound()
     {
         // return;
-        serverStream.Write(rawSound);
+        socketLoaded = true;
+
+        server.Send(rawSound);
     }
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
+        server.Send(new byte[] { (byte)255 });
         server.Close();
     }
 }
