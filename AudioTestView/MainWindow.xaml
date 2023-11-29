@@ -15,6 +15,7 @@
             <TextBlock Name="Indicator"></TextBlock>
             <TextBlock Name="MaxInd"></TextBlock>
             <Rectangle Width="30" Height="30" Fill="Black" Name="SLInd"></Rectangle>
+            <CheckBox></CheckBox>
         </StackPanel>
         <Grid x:Name="TestGrid" Grid.Row="1">
         </Grid>
