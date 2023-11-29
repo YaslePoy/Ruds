@@ -1,4 +1,6 @@
 ﻿using System.Globalization;
+using System.IO;
+using System.Net;
 using NAudio.Wave;
 using System.Net.Sockets;
 using System.Windows;
@@ -69,7 +71,7 @@ public partial class MainWindow : Window
     void NetworkHandle()
     {
         server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        server.Connect("26.59.160.203", 10101);
+        server.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
 
         BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
         var wo = new WaveOutEvent();
