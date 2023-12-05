@@ -9,15 +9,16 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition></RowDefinition>
-            <RowDefinition Height="5*"></RowDefinition>
+            <RowDefinition Height="3*"></RowDefinition>
         </Grid.RowDefinitions>
         <StackPanel>
-            <TextBlock Name="Indicator"></TextBlock>
-            <TextBlock Name="MaxInd"></TextBlock>
+            <TextBlock Name="Indicator" Margin="10"></TextBlock>
+            <TextBlock Margin="5">In threw network</TextBlock>
+            <ProgressBar Height="15" Name="MaxInd" Minimum="0" Maximum="3000" Margin="10"></ProgressBar>
+            <TextBlock Name="MaxIndText"></TextBlock>
             <Rectangle Width="30" Height="30" Fill="Black" Name="SLInd"></Rectangle>
-            <CheckBox></CheckBox>
         </StackPanel>
-        <Grid x:Name="TestGrid" Grid.Row="1">
+        <Grid x:Name="TestGrid" Grid.Row="1" Background="Blue">
         </Grid>
     </Grid>
 
