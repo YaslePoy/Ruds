@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
@@ -89,16 +90,18 @@ public class RemoteClient(Socket user, MishcordNetworker host)
     void HandleNetwork()
     {
         var netInput = new byte[2048];
-        int inputLen = 0, logCounter = 0;
+        int inputLen, logCounter = 0;
 
         Console.WriteLine($"Handling {end.Handle} start");
 
+        BitArray converter;
         while (end.Connected && host.sendEnable)
         {
             try
             {
-                inputLen = end.Receive(netInput);
-                var data = netInput[..inputLen];
+                end.Receive(netInput);
+                inputLen = BitConverter.ToInt32(netInput);
+                var data = netInput[4..(inputLen + 4)];
                 if (data.Length == 1 && data[0] == 255)
                 {
                     end.Disconnect(false);
@@ -112,7 +115,6 @@ public class RemoteClient(Socket user, MishcordNetworker host)
             catch (Exception e)
             {
                 Console.WriteLine(e);
-                throw;
             }
         }
 
