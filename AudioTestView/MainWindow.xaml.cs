@@ -1,9 +1,8 @@
-﻿using System.Globalization;
-using System.IO;
+﻿using System.IO;
 using System.Net;
 using NAudio.Wave;
 using System.Net.Sockets;
-using System.Timers;
+using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -20,10 +19,12 @@ public partial class MainWindow : Window
     private Socket server;
     private Int16[] levels = new short[882];
     private byte[] rawSound;
-    private DateTime updateTime;
     private bool socketLoaded;
     private int max;
     private int recived;
+    private bool isNoize;
+    private int inPacks, outPacks;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
             TestGrid.Children.Add(vertical);
             Grid.SetColumn(vertical, i);
         }
+
         var waveIn = new WaveInEvent
         {
             DeviceNumber = 0, // indicates which microphone to use
@@ -56,46 +58,52 @@ public partial class MainWindow : Window
             {
                 (TestGrid.Children[i] as Rectangle)!.Height = Math.Max(total * levels[i] / 32768 * 2, 0);
             }
-            Indicator.Text = updateTime.ToString(CultureInfo.InvariantCulture);
 
-            if (socketLoaded)
-            {
-                SLInd.Fill = new SolidColorBrush(Colors.Red);
-            }
+            Indicator.Text = $"{SetLength(inPacks.ToString(), 8)} {SetLength(outPacks.ToString(), 8)}";
 
             MaxInd.Value = max;
             MaxIndText.Text = recived.ToString();
+            isNoize = NoizeEnable.IsChecked.GetValueOrDefault();
         };
         levelUpdate.Start();
 
-        System.Timers.Timer sendOutTimer = new (TimeSpan.FromMicroseconds(20));
-        sendOutTimer.Elapsed+= (o, e) => { server.SendAsync(rawSound); };
+        System.Timers.Timer sendOutTimer = new(TimeSpan.FromMicroseconds(20));
+        sendOutTimer.Elapsed += (o, e) =>
+        {
+            server?.Send(rawSound);
+            outPacks++;
+        };
         sendOutTimer.Start();
     }
-
 
     void NetworkHandle()
     {
         server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         server.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
-        
+
         BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
         var wo = new WaveOutEvent();
         wo.Init(ms);
         wo.Play();
-        
+        byte[] buffed;
         while (server.Connected)
         {
-            var buffed = new byte[4096];
+            buffed = new byte[2048];
             int len = server.Receive(buffed);
             buffed = buffed[..len];
-            updateTime = DateTime.Now;
             var values = new short[buffed.Length / 2];
             Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
             max = values.Max();
             recived++;
-            ms.AddSamples(buffed, 0, len);
-
+            inPacks++;
+            try
+            {
+                ms.AddSamples(buffed, 0, len);
+            }
+            catch (Exception e)
+            {
+                ms.ClearBuffer();
+            }
         }
     }
 
@@ -103,8 +111,9 @@ public partial class MainWindow : Window
     {
         // copy buffer into an array of integers
         Int16[] values = new Int16[e.Buffer.Length / 2];
-        Buffer.BlockCopy(e.Buffer, 0, values, 0, e.Buffer.Length);
-        rawSound = e.Buffer;
+        rawSound = isNoize ? RandomNumberGenerator.GetBytes(e.Buffer.Length) : e.Buffer;
+        Buffer.BlockCopy(rawSound, 0, values, 0, e.Buffer.Length);
+
         // determine the highest value as a fraction of the maximum possible value
         float fraction = (float)values.Max() / 32768;
         levels = values;
@@ -114,5 +123,10 @@ public partial class MainWindow : Window
     {
         server.Send(new byte[] { 255 });
         server.Close();
+    }
+
+    private static string SetLength(string value, int outLength)
+    {
+        return new string(' ', outLength - value.Length) + value;
     }
 }

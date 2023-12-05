@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using RudsServer;
 
 class Program
 {
@@ -7,23 +8,27 @@ class Program
     private static Dictionary<Socket, byte[]> soundBuffer = new();
     private static int SendLog = 0;
 
-    public static async Task Main(string[] args)
+    public static void Main(string[] args)
     {
-        System.Timers.Timer bufferSender = new(TimeSpan.FromMilliseconds(20));
-        bufferSender.Elapsed += (sender, eventArgs) => SendSoundBuffer();
-        bufferSender.Start();
-        Socket local = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        var getting = new IPEndPoint(IPAddress.Any, 10101);
-        local.Bind(getting);
-        local.Listen();
-        while (true)
-        {
-            Console.WriteLine("listen");
-            var soc = local.Accept();
-            users.Add(soc);
-            Task.Run(() => Play(soc));
-            Console.WriteLine(users.Count + "Connected");
-        }
+        // System.Timers.Timer bufferSender = new(TimeSpan.FromMilliseconds(20));
+        // bufferSender.Elapsed += (sender, eventArgs) => SendSoundBuffer();
+        // bufferSender.Start();
+        // Socket local = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        // var getting = new IPEndPoint(IPAddress.Any, 10101);
+        // local.Bind(getting);
+        // local.Listen();
+        // while (true)
+        // {
+        //     Console.WriteLine("listen");
+        //     var soc = local.Accept();
+        //     users.Add(soc);
+        //     Task.Run(() => Play(soc));
+        //     Console.WriteLine(users.Count + "Connected");
+        // }
+
+        MishcordNetworker server = new MishcordNetworker(TimeSpan.FromMilliseconds(20));
+        server.Start();
+
     }
 
     static void Play(Socket from)

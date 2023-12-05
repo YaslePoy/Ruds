@@ -9,20 +9,35 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
     public readonly TimeSpan sendRate = updateRate;
     public Dictionary<RemoteClient, byte[]> soundBuffer = new();
     private Socket serverSoc = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-    private bool sendEnable = true;
+    public bool sendEnable = true, acceptEnable = true;
 
-    void Start()
+    public void Start()
     {
         serverSoc.Bind(new IPEndPoint(IPAddress.Any, 10101));
         serverSoc.Listen();
         Task.Run(SendOutSounds);
-        while (true)
+        Task.Run(CloseHandle);
+        while (acceptEnable)
         {
+            Console.WriteLine("Waiting for client");
             var connection = serverSoc.Accept();
+            Console.WriteLine($"{connection.Handle} connected");
             var client = new RemoteClient(connection, this);
             soundBuffer.Add(client, null);
             client.Run();
+            Console.WriteLine("Client runned");
         }
+    }
+
+    private void CloseHandle()
+    {
+        while (true)
+        {
+            if (Console.ReadLine() == "close")
+                break;
+        }
+
+        Dispose();
     }
 
     void SendOutSounds()
@@ -31,15 +46,15 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
         Stopwatch sendTimer = new Stopwatch();
         while (sendEnable)
         {
-            int sendCount = 0;
             sendTimer.Start();
+            int sendCount = 0;
             foreach (var buffer in soundBuffer)
             {
                 foreach (var send in soundBuffer)
                 {
                     if (send.Key.end.Handle == buffer.Key.end.Handle)
                         continue;
-                    send.Key.end.Send(send.Value);
+                    send.Key.end.Send(buffer.Value);
                     sendCount++;
                 }
             }
@@ -48,7 +63,7 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
             var sleepTime = sendRate - sendTimer.Elapsed;
             if (sleepTime > TimeSpan.Zero)
                 Thread.Sleep(sleepTime);
-            if (sendLocCounter++ % 100 == 0)
+            if (sendLocCounter++ % 150 == 0)
                 Console.WriteLine(sendCount);
         }
     }
@@ -57,20 +72,14 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
     {
         serverSoc?.Dispose();
         sendEnable = false;
+        acceptEnable = false;
         Console.WriteLine("Server disposed");
     }
 }
 
-public class RemoteClient
+public class RemoteClient(Socket user, MishcordNetworker host)
 {
-    private readonly MishcordNetworker host;
-    public Socket end;
-
-    public RemoteClient(Socket user, MishcordNetworker host)
-    {
-        end = user;
-        this.host = host;
-    }
+    public Socket end = user;
 
     public void Run()
     {
@@ -84,7 +93,7 @@ public class RemoteClient
 
         Console.WriteLine($"Handling {end.Handle} start");
 
-        while (end.Connected)
+        while (end.Connected && host.sendEnable)
         {
             try
             {
@@ -93,7 +102,6 @@ public class RemoteClient
                 if (data.Length == 1 && data[0] == 255)
                 {
                     end.Disconnect(false);
-                    end.Dispose();
                     break;
                 }
 
@@ -107,5 +115,8 @@ public class RemoteClient
                 throw;
             }
         }
+
+        Console.WriteLine($"{end.Handle} finished");
+        end.Dispose();
     }
 }
