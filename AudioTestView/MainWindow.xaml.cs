@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using RudsServer;
 
 namespace AudioTestView;
 
@@ -17,7 +18,8 @@ namespace AudioTestView;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private Socket server;
+    private byte counter;
+    private FixedReciver server;
     private Int16[] levels = new short[882];
     private byte[] rawSound;
     private bool socketLoaded;
@@ -71,9 +73,9 @@ public partial class MainWindow : Window
         System.Timers.Timer sendOutTimer = new(TimeSpan.FromMicroseconds(20));
         sendOutTimer.Elapsed += (o, e) =>
         {
-            if (server != null && !server.Connected || rawSound == null)
+            if (server is not null && !server.Connected || rawSound == null)
                 return;
-            server?.Send(rawSound);
+            server?.Write(rawSound);
             outPacks++;
         };
         sendOutTimer.Start();
@@ -81,32 +83,39 @@ public partial class MainWindow : Window
 
     void NetworkHandle()
     {
-        server = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        server.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
-
-        BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
-        var wo = new WaveOutEvent();
-        wo.Init(ms);
-        wo.Play();
-        byte[] buffed;
-        while (server.Connected)
+        try
         {
-            buffed = new byte[2048];
-            int len = server.Receive(buffed);
-            buffed = buffed[..len];
-            var values = new short[buffed.Length / 2];
-            Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
-            max = values.Max();
-            recived++;
-            inPacks++;
-            try
+            var cl = new TcpClient();
+            cl.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
+            server = new FixedReciver(cl.GetStream());
+
+            BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
+            var wo = new WaveOutEvent();
+            wo.Init(ms);
+            wo.Play();
+            byte[] buffed;
+            while (server.Connected)
             {
-                ms.AddSamples(buffed, 0, len);
+                buffed = server.Read();
+                var values = new short[buffed.Length / 2];
+                Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
+                max = values.Max();
+                recived++;
+                inPacks++;
+                try
+                {
+                    ms.AddSamples(buffed, 0, buffed.Length);
+                }
+                catch (Exception e)
+                {
+                    ms.ClearBuffer();
+                }
             }
-            catch (Exception e)
-            {
-                ms.ClearBuffer();
-            }
+        }
+        catch (Exception e)
+        {
+            MessageBox.Show(e.ToString());
+            throw;
         }
     }
 
@@ -124,7 +133,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
-        server.Send(new byte[] { 255 });
+        server.Write(new byte[] { 255 });
         server.Close();
     }
 
