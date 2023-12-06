@@ -53,9 +53,9 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
             {
                 foreach (var send in soundBuffer)
                 {
-                    if (send.Key.end.Handle == buffer.Key.end.Handle)
+                    if (send.Key.clientPoint.Handle == buffer.Key.clientPoint.Handle)
                         continue;
-                    send.Key.end.Send(buffer.Value);
+                    send.Key.clientPoint.Send(buffer.Value);
                     sendCount++;
                 }
             }
@@ -80,7 +80,7 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
 
 public class RemoteClient(Socket user, MishcordNetworker host)
 {
-    public Socket end = user;
+    public Socket clientPoint = user;
 
     public void Run()
     {
@@ -92,24 +92,22 @@ public class RemoteClient(Socket user, MishcordNetworker host)
         var netInput = new byte[2048];
         int inputLen, logCounter = 0;
 
-        Console.WriteLine($"Handling {end.Handle} start");
+        Console.WriteLine($"Handling {clientPoint.Handle} start");
 
-        BitArray converter;
-        while (end.Connected && host.sendEnable)
+        while (clientPoint.Connected && host.sendEnable)
         {
             try
             {
-                end.Receive(netInput);
-                inputLen = BitConverter.ToInt32(netInput);
-                var data = netInput[4..(inputLen + 4)];
+                inputLen = clientPoint.Receive(netInput);
+                var data = netInput[..inputLen];
                 if (data.Length == 1 && data[0] == 255)
                 {
-                    end.Disconnect(false);
+                    clientPoint.Disconnect(false);
                     break;
                 }
 
                 if (logCounter++ % 100 == 0)
-                    Console.WriteLine($"Recived {inputLen} bytes from {end.Handle}");
+                    Console.WriteLine($"Recived {inputLen} bytes from {clientPoint.Handle}");
                 host.soundBuffer[this] = data;
             }
             catch (Exception e)
@@ -118,7 +116,7 @@ public class RemoteClient(Socket user, MishcordNetworker host)
             }
         }
 
-        Console.WriteLine($"{end.Handle} finished");
-        end.Dispose();
+        Console.WriteLine($"{clientPoint.Handle} finished");
+        clientPoint.Dispose();
     }
 }

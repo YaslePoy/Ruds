@@ -15,7 +15,7 @@ namespace AudioTestView;
 /// <summary>
 /// Interaction logic for MainWindow.xaml
 /// </summary>
-public partial class MainWindow
+public partial class MainWindow : Window
 {
     private Socket server;
     private Int16[] levels = new short[882];
@@ -25,7 +25,7 @@ public partial class MainWindow
     private int recived;
     private bool isNoize;
     private int inPacks, outPacks;
-    private int MaxLen;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -60,7 +60,7 @@ public partial class MainWindow
                 (TestGrid.Children[i] as Rectangle)!.Height = Math.Max(total * levels[i] / 32768 * 2, 0);
             }
 
-            Indicator.Text = $"{SetLength(MaxLen.ToString(), 8)} {SetLength(inPacks.ToString(), 8)} {SetLength(outPacks.ToString(), 8)}";
+            Indicator.Text = $"{SetLength(inPacks.ToString(), 8)} {SetLength(outPacks.ToString(), 8)}";
 
             MaxInd.Value = max;
             MaxIndText.Text = recived.ToString();
@@ -73,8 +73,7 @@ public partial class MainWindow
         {
             if (server != null && !server.Connected || rawSound == null)
                 return;
-            var sendData = PrepairToSend(rawSound); 
-            server?.Send(sendData);
+            server?.Send(rawSound);
             outPacks++;
         };
         sendOutTimer.Start();
@@ -125,24 +124,12 @@ public partial class MainWindow
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
-        server.Send(PrepairToSend(new byte[] { 255 }));
+        server.Send(new byte[] { 255 });
         server.Close();
     }
 
     private static string SetLength(string value, int outLength)
     {
         return new string(' ', outLength - value.Length) + value;
-    }
-
-    public byte[] PrepairToSend(byte[] data)
-    {
-        var retArr = new byte[data.Length + 4];
-        data.CopyTo(retArr, 4);
-        BitConverter.GetBytes(data.Length).CopyTo(retArr, 0);
-        if (MaxLen < data.Length)
-        {
-            MaxLen = data.Length;
-        }
-        return retArr;
     }
 }
