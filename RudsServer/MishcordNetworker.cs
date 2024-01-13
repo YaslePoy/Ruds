@@ -9,7 +9,7 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
 {
     public readonly TimeSpan sendRate = updateRate;
     public Dictionary<RemoteClient, byte[]> soundBuffer = new();
-    private TcpListener serverSoc = new TcpListener(IPAddress.Any, 10101);
+    private TcpListener serverSoc = new(IPAddress.Any, 900);
     public bool sendEnable = true, acceptEnable = true;
 
     public void Start()
@@ -42,31 +42,29 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
 
     void SendOutSounds()
     {
-        int sendLocCounter = 0;
         Stopwatch sendTimer = new Stopwatch();
         while (sendEnable)
         {
-            sendTimer.Start();
-            int sendCount = 0;
+            sendTimer.Restart();
             foreach (var buffer in soundBuffer)
             {
                 foreach (var send in soundBuffer)
                 {
                     // if (send.Key.clientPoint == buffer.Key.clientPoint)
                     //     continue;
-                    if(buffer.Value is null)
+                    if (buffer.Value is null)
                         continue;
                     send.Key.clientPoint.Write(buffer.Value);
-                    sendCount++;
                 }
             }
-
             sendTimer.Stop();
             var sleepTime = sendRate - sendTimer.Elapsed;
             if (sleepTime > TimeSpan.Zero)
                 Thread.Sleep(sleepTime);
-            if (sendLocCounter++ % 150 == 0)
-                Console.WriteLine(sendCount);
+            else
+            {
+                Console.WriteLine("Long sending");
+            }
         }
     }
 
@@ -81,7 +79,7 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
 
 public class RemoteClient(NetworkStream user, MishcordNetworker host)
 {
-    public FixedReciver clientPoint = new FixedReciver(user);
+    public FixedReciver clientPoint = new(user);
 
     public void Run()
     {
@@ -90,8 +88,6 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host)
 
     void HandleNetwork()
     {
-        var logCounter = 0;
-
         Console.WriteLine($"Handling {clientPoint} start");
 
         while (clientPoint.Connected && host.sendEnable)
@@ -101,6 +97,7 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host)
                 var data = clientPoint.Read();
                 if (data.Length == 1)
                 {
+                    Console.WriteLine("data len = 1");
                     clientPoint.Close();
                     break;
                 }
@@ -121,6 +118,7 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host)
 public class FixedReciver(NetworkStream stream) : IDisposable, IAsyncDisposable
 {
     private NetworkStream ns = stream;
+
     public void Write(byte[] data)
     {
         ns.Write(Prepair(data));
@@ -129,15 +127,11 @@ public class FixedReciver(NetworkStream stream) : IDisposable, IAsyncDisposable
     public byte[] Read()
     {
         var msgLen = new byte[4];
-        ns.Read(msgLen);
-        var reciveLen = BitConverter.ToInt32(msgLen);
-        var msg = new byte[reciveLen];
-        for (int i = 0; i < reciveLen; i++)
-        {
-            msg[i] = (byte)ns.ReadByte();
-        }
-
-        return msg;
+        ns.ReadExactly(msgLen, 0, 4);
+        int fullLength = BitConverter.ToInt32(msgLen);
+        var respone = new byte[fullLength];
+        ns.ReadExactly(respone, 0, fullLength);
+        return respone;
     }
 
     public override string ToString()
@@ -166,7 +160,7 @@ public class FixedReciver(NetworkStream stream) : IDisposable, IAsyncDisposable
         fr1.ns.Socket.Handle == fr2.ns.Socket.Handle;
 
     public static bool operator !=(FixedReciver fr1, FixedReciver fr2) => !(fr1 == fr2);
-    
+
     public static byte[] Prepair(byte[] raw)
     {
         var send = new byte[4 + raw.Length];

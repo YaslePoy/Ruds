@@ -7,19 +7,15 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800" Closed="MainWindow_OnClosed">
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition></RowDefinition>
-            <RowDefinition Height="2*"></RowDefinition>
-        </Grid.RowDefinitions>
         <StackPanel>
             <TextBlock Name="Indicator" Margin="10"></TextBlock>
-            <TextBlock Margin="5">In threw network</TextBlock>
-            <ProgressBar Height="15" Name="MaxInd" Minimum="0" Maximum="3000" Margin="10"></ProgressBar>
+            <TextBlock Margin="10">Network in</TextBlock>
+            <ProgressBar Height="15" Name="MaxInd" Minimum="0" Maximum="5000" Margin="10"/>
+            <TextBlock Margin="10">Client sound</TextBlock>
+            <ProgressBar Height="15" Name="ClientInd" Minimum="0" Maximum="5000" Margin="10"/>
             <TextBlock Name="MaxIndText"></TextBlock>
-            <CheckBox Name="NoizeEnable">Test noize</CheckBox>
+            <CheckBox Margin="10" Name="NoizeEnable">Test noize</CheckBox>
         </StackPanel>
-        <Grid x:Name="TestGrid" Grid.Row="1" Background="Blue">
-        </Grid>
     </Grid>
 
 </Window>

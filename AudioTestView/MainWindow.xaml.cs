@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using NAudio.Wave;
@@ -16,11 +17,11 @@ namespace AudioTestView;
 /// <summary>
 /// Interaction logic for MainWindow.xaml
 /// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow
 {
     private byte counter;
     private FixedReciver server;
-    private Int16[] levels = new short[882];
+    private Int16 level;
     private byte[] rawSound;
     private bool socketLoaded;
     private int max;
@@ -31,14 +32,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        int cols = 882;
-        for (int i = 0; i < cols; i++)
-        {
-            TestGrid.ColumnDefinitions.Add(new ColumnDefinition());
-            var vertical = new Rectangle { Fill = new SolidColorBrush(Colors.Chocolate), StrokeThickness = 0 };
-            TestGrid.Children.Add(vertical);
-            Grid.SetColumn(vertical, i);
-        }
 
         var waveIn = new WaveInEvent
         {
@@ -56,12 +49,7 @@ public partial class MainWindow : Window
         };
         levelUpdate.Tick += (sender, args) =>
         {
-            double total = TestGrid.ActualHeight;
-            for (int i = 0; i < levels.Length; i++)
-            {
-                (TestGrid.Children[i] as Rectangle)!.Height = Math.Max(total * levels[i] / 32768 * 2, 0);
-            }
-
+            ClientInd.Value = level;
             Indicator.Text = $"{SetLength(inPacks.ToString(), 8)} {SetLength(outPacks.ToString(), 8)}";
 
             MaxInd.Value = max;
@@ -83,52 +71,44 @@ public partial class MainWindow : Window
 
     void NetworkHandle()
     {
-        try
-        {
-            var cl = new TcpClient();
-            cl.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
-            server = new FixedReciver(cl.GetStream());
+        var cl = new TcpClient();
+        cl.Connect(IPEndPoint.Parse(File.ReadAllText("ipconfig.txt")));
+        server = new FixedReciver(cl.GetStream());
 
-            BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
-            var wo = new WaveOutEvent();
-            wo.Init(ms);
-            wo.Play();
-            byte[] buffed;
-            while (server.Connected)
-            {
-                buffed = server.Read();
-                var values = new short[buffed.Length / 2];
-                Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
-                max = values.Max();
-                recived++;
-                inPacks++;
-                try
-                {
-                    ms.AddSamples(buffed, 0, buffed.Length);
-                }
-                catch (Exception e)
-                {
-                    ms.ClearBuffer();
-                }
-            }
-        }
-        catch (Exception e)
+        BufferedWaveProvider ms = new BufferedWaveProvider(new WaveFormat(44100, 16, 1));
+        var wo = new WaveOutEvent();
+        wo.Init(ms);
+        wo.Play();
+        byte[] buffed;
+        while (server.Connected)
         {
-            MessageBox.Show(e.ToString());
-            throw;
+            buffed = server.Read();
+            var values = new short[buffed.Length / 2];
+            Buffer.BlockCopy(buffed, 0, values, 0, buffed.Length);
+            max = values.Max();
+            recived++;
+            inPacks++;
+            try
+            {
+                while (!ms.ReadFully) ;
+
+                ms.AddSamples(buffed, 0, buffed.Length);
+            }
+            catch (Exception e)
+            {
+                ms.ClearBuffer();
+                MessageBox.Show(e.ToString());
+            }
         }
     }
 
-    void WaveIn_DataAvailable(object? sender, NAudio.Wave.WaveInEventArgs e)
+    void WaveIn_DataAvailable(object? sender, WaveInEventArgs e)
     {
-        // copy buffer into an array of integers
         Int16[] values = new Int16[e.Buffer.Length / 2];
         rawSound = isNoize ? RandomNumberGenerator.GetBytes(e.Buffer.Length) : e.Buffer;
         Buffer.BlockCopy(rawSound, 0, values, 0, e.Buffer.Length);
 
-        // determine the highest value as a fraction of the maximum possible value
-        float fraction = (float)values.Max() / 32768;
-        levels = values;
+        level = values.Max();
     }
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
