@@ -1,31 +1,83 @@
-﻿using System.Collections;
-using System.Diagnostics;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
+using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace RudsServer;
 
 public class MishcordNetworker(TimeSpan updateRate) : IDisposable
 {
-    public readonly TimeSpan sendRate = updateRate;
-    public Dictionary<RemoteClient, byte[]> soundBuffer = new();
+    private CancellationTokenSource CommandBufferToken;
+    private Dictionary<Guid, RemoteClient> clients = new Dictionary<Guid, RemoteClient>();
+
+
     private TcpListener serverSoc = new(IPAddress.Any, 900);
     public bool sendEnable = true, acceptEnable = true;
+
+    public Queue<string> CommandBuffer = new();
+    public Queue<Guid> AppendChanelBuffer = new();
 
     public void Start()
     {
         serverSoc.Start();
-        Task.Run(SendOutSounds);
         Task.Run(CloseHandle);
+        CommandBufferToken = new CancellationTokenSource();
+        Task.Run(HandleCommandBuffer, CommandBufferToken.Token);
         while (acceptEnable)
         {
-            Console.WriteLine("Waiting for client");
-            var connection = serverSoc.AcceptTcpClient();
-            Console.WriteLine($"{connection.Client.Handle} connected");
-            var client = new RemoteClient(connection.GetStream(), this);
-            soundBuffer.Add(client, null);
-            client.Run();
-            Console.WriteLine("Client runned");
+            Console.WriteLine("Waiting for connection");
+            HandleConnection(serverSoc.AcceptTcpClient());
+        }
+    }
+
+    void HandleConnection(TcpClient client)
+    {
+        const int initLen = 128;
+        Console.WriteLine($"{client.Client.Handle} connected");
+        var initBuffer = new byte[initLen];
+        var clientStream = client.GetStream();
+        var actualLen = clientStream.Read(initBuffer, 0, 128);
+        initBuffer = initBuffer[..actualLen];
+        var initMessage = Encoding.UTF8.GetString(initBuffer);
+        if (initMessage.StartsWith("new client technical"))
+        {
+            var id = Guid.NewGuid();
+            RemoteClient current = new RemoteClient(clientStream, this, id);
+            current.InitBack();
+            clients.Add(id, current);
+            current.Run();
+        }
+        else if (initMessage.StartsWith("sound chanel source"))
+        {
+            var currentId = new Guid(initBuffer[19..(19 + 16)]);
+            clients[currentId].SoundStream = clientStream;
+            Console.WriteLine($"{currentId} client sound chanel source connected!");
+            AppendChanelBuffer.Clear();
+            foreach (var idClient in clients)
+            {
+                if (idClient.Key == currentId)
+                    continue;
+                AppendChanelBuffer.Enqueue(idClient.Key);
+            }
+
+            if (AppendChanelBuffer.Count != 0)
+                clients[currentId].Send("generate in chanel"u8.ToArray());
+        }
+        else if (initMessage.StartsWith("sound chanel resend"))
+        {
+            var currentId = new Guid(initBuffer[19..(19 + 16)]);
+            clients[AppendChanelBuffer.Dequeue()].AppendSoundEndPoint(clientStream, currentId);
+            if (AppendChanelBuffer.Count != 0)
+                clients[currentId].Send("generate in chanel"u8.ToArray());
+        }
+    }
+
+    void HandleCommandBuffer()
+    {
+        while (true)
+        {
+            while (CommandBuffer.Count == 0) ;
+            var command = CommandBuffer.Dequeue();
         }
     }
 
@@ -34,38 +86,14 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
         while (true)
         {
             if (Console.ReadLine() == "close")
-                break;
+            {
+                CommandBufferToken.Cancel();
+            }
+
+            break;
         }
 
         Dispose();
-    }
-
-    void SendOutSounds()
-    {
-        Stopwatch sendTimer = new Stopwatch();
-        while (sendEnable)
-        {
-            sendTimer.Restart();
-            foreach (var buffer in soundBuffer)
-            {
-                foreach (var send in soundBuffer)
-                {
-                    // if (send.Key.clientPoint == buffer.Key.clientPoint)
-                    //     continue;
-                    if (buffer.Value is null)
-                        continue;
-                    send.Key.clientPoint.Write(buffer.Value);
-                }
-            }
-            sendTimer.Stop();
-            var sleepTime = sendRate - sendTimer.Elapsed;
-            if (sleepTime > TimeSpan.Zero)
-                Thread.Sleep(sleepTime);
-            else
-            {
-                Console.WriteLine("Long sending");
-            }
-        }
     }
 
     public void Dispose()
@@ -77,9 +105,14 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
     }
 }
 
-public class RemoteClient(NetworkStream user, MishcordNetworker host)
+public class RemoteClient(NetworkStream user, MishcordNetworker host, Guid identifier)
 {
-    public FixedReciver clientPoint = new(user);
+    public NetworkStream TechnicalStream = user, SoundStream;
+    public Guid Id = identifier;
+
+    public Dictionary<Guid, NetworkStream> SoundEndPoints = new();
+
+    private byte[] receiveBuffer = new byte[2048];
 
     public void Run()
     {
@@ -88,21 +121,13 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host)
 
     void HandleNetwork()
     {
-        Console.WriteLine($"Handling {clientPoint} start");
+        Console.WriteLine($"Handling {TechnicalStream} start");
 
-        while (clientPoint.Connected && host.sendEnable)
+        while (TechnicalStream.Socket.Connected && host.sendEnable)
         {
             try
             {
-                var data = clientPoint.Read();
-                if (data.Length == 1)
-                {
-                    Console.WriteLine("data len = 1");
-                    clientPoint.Close();
-                    break;
-                }
-
-                host.soundBuffer[this] = data;
+                host.CommandBuffer.Enqueue(Encoding.UTF8.GetString(Read()));
             }
             catch (Exception e)
             {
@@ -110,62 +135,34 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host)
             }
         }
 
-        Console.WriteLine($"{clientPoint} finished");
-        clientPoint.Dispose();
-    }
-}
-
-public class FixedReciver(NetworkStream stream) : IDisposable, IAsyncDisposable
-{
-    private NetworkStream ns = stream;
-
-    public void Write(byte[] data)
-    {
-        ns.Write(Prepair(data));
+        Console.WriteLine($"{TechnicalStream} finished");
+        TechnicalStream.Dispose();
     }
 
-    public byte[] Read()
+    public void Send(byte[] data)
     {
-        var msgLen = new byte[4];
-        ns.ReadExactly(msgLen, 0, 4);
-        int fullLength = BitConverter.ToInt32(msgLen);
-        var respone = new byte[fullLength];
-        ns.ReadExactly(respone, 0, fullLength);
-        return respone;
+        TechnicalStream.Write(data, 0, data.Length);
     }
 
-    public override string ToString()
+    byte[] Read()
     {
-        return ns.Socket.Handle.ToString();
+        var lenBuffer = new byte[4];
+
+        TechnicalStream.ReadExactly(lenBuffer, 0, 4);
+        var receiveLen = BitConverter.ToInt32(lenBuffer);
+
+        TechnicalStream.ReadExactly(receiveBuffer, 0, receiveLen);
+        return receiveBuffer[..receiveLen];
     }
 
-    public void Dispose()
+    public void InitBack()
     {
-        ns.Dispose();
+        TechnicalStream.Write(Id.ToByteArray(), 0, 16);
     }
 
-    public async ValueTask DisposeAsync()
+    public void AppendSoundEndPoint(NetworkStream stream, Guid id)
     {
-        await ns.DisposeAsync();
-    }
-
-    public void Close()
-    {
-        ns.Close();
-    }
-
-    public bool Connected => ns.Socket.Connected;
-
-    public static bool operator ==(FixedReciver fr1, FixedReciver fr2) =>
-        fr1.ns.Socket.Handle == fr2.ns.Socket.Handle;
-
-    public static bool operator !=(FixedReciver fr1, FixedReciver fr2) => !(fr1 == fr2);
-
-    public static byte[] Prepair(byte[] raw)
-    {
-        var send = new byte[4 + raw.Length];
-        BitConverter.GetBytes(raw.Length).CopyTo(send, 0);
-        raw.CopyTo(send, 4);
-        return send;
+        SoundEndPoints.Add(id, stream);
+        SoundStream.CopyTo(stream);
     }
 }

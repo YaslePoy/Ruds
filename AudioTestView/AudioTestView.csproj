@@ -18,8 +18,4 @@
       </None>
     </ItemGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\RudsServer\RudsServer.csproj" />
-    </ItemGroup>
-
 </Project>

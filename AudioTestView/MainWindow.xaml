@@ -8,6 +8,10 @@
         Title="MainWindow" Height="450" Width="800" Closed="MainWindow_OnClosed">
     <Grid>
         <StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="10">
+                <TextBlock>User id:</TextBlock>
+                <TextBlock Name="IdTB"/>
+            </StackPanel>
             <TextBlock Name="Indicator" Margin="10"></TextBlock>
             <TextBlock Margin="10">Network in</TextBlock>
             <ProgressBar Height="15" Name="MaxInd" Minimum="0" Maximum="5000" Margin="10"/>
