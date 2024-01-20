@@ -6,10 +6,13 @@ namespace AudioTestView;
 
 public class NetworkSoundPlayer
 {
+    private Guid SenderId;
+    private short MaxLevel;
     private CancellationTokenSource stopToken;
     public void Launch(Guid clientId, IPEndPoint server)
     {
         stopToken = new CancellationTokenSource();
+        SenderId = clientId;
         Task.Run(() => PlayNetwork(clientId, server), stopToken.Token);
     }
     void PlayNetwork(Guid clientId, IPEndPoint server)
@@ -36,4 +39,12 @@ public class NetworkSoundPlayer
     {
         stopToken.Cancel();
     }
+
+    public SoundStatistics GetStats()
+    {
+        return new SoundStatistics(SenderId, MaxLevel);
+    }
+    
 }
+
+public record SoundStatistics(Guid id, short level);

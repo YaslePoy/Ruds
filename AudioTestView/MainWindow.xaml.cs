@@ -4,6 +4,7 @@ using NAudio.Wave;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace AudioTestView;
@@ -19,26 +20,23 @@ public partial class MainWindow
     
     public List<NetworkSoundPlayer> SoundInputs = new();
     private byte counter;
-    private Int16 level;
+    private short level;
     private byte[] rawSound;
+    private short[] compressed;
     private bool socketLoaded;
     private int max;
     private int recived;
     private bool isNoize;
     private int inPacks, outPacks;
-
+    private WaveInEvent recorder;
     public MainWindow()
     {
         InitializeComponent();
-
-        var waveIn = new WaveInEvent
+        for (int i = -1; i < WaveIn.DeviceCount; i++)
         {
-            DeviceNumber = 0, // indicates which microphone to use
-            WaveFormat = new WaveFormat(rate: 44100, bits: 16, channels: 1),
-            BufferMilliseconds = 20
-        };
-        waveIn.DataAvailable += WaveIn_DataAvailable;
-        waveIn.StartRecording();
+            var caps = NAudio.Wave.WaveIn.GetCapabilities(i);
+            MicroCB.Items.Add(caps.ProductName);
+        }
         NetworkInit();
 
         IdTB.Text = Id.ToString();
@@ -50,11 +48,9 @@ public partial class MainWindow
         levelUpdate.Tick += (sender, args) =>
         {
             ClientInd.Value = level;
-            Indicator.Text = $"{SetLength(inPacks.ToString(), 8)} {SetLength(outPacks.ToString(), 8)}";
-
-            MaxInd.Value = max;
-            MaxIndText.Text = recived.ToString();
             isNoize = NoizeEnable.IsChecked.GetValueOrDefault();
+            ConnectionViewer.ItemsSource = null;
+            ConnectionViewer.ItemsSource = SoundInputs.Select(i => i.GetStats());
         };
         levelUpdate.Start();
         Task.Run(NetworkTechnical);
@@ -98,8 +94,14 @@ public partial class MainWindow
     
     void WaveIn_DataAvailable(object? sender, WaveInEventArgs e)
     {
-        rawSound = isNoize ? RandomNumberGenerator.GetBytes(e.Buffer.Length) : e.Buffer;
-        SoundOut!.Write(rawSound);
+        if (compressed is null)
+            compressed = new short[e.Buffer.Length / 2]; 
+        
+        Buffer.BlockCopy(e.Buffer, 0, compressed, 0, e.Buffer.Length);
+        level = compressed.Max();
+        // level = (short)(++level % 5000);
+        rawSound = isNoize ? /*RandomNumberGenerator.GetBytes(e.Buffer.Length)*/ new byte[e.Buffer.Length] : e.Buffer;
+        SoundOut.Write(rawSound);
     }
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
@@ -117,5 +119,21 @@ public partial class MainWindow
     {
         var data = Encoding.UTF8.GetBytes(message);
         Technical.Write(data, 0, data.Length);
+    }
+
+    private void MicroCB_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if(MicroCB.SelectedIndex == 0)
+            return;
+        if(recorder is not null)
+            recorder.StopRecording();
+        recorder = new WaveInEvent
+        {
+            DeviceNumber = MicroCB.SelectedIndex - 2,
+            WaveFormat = new (rate: 44100, bits: 16, channels: 1),
+            BufferMilliseconds = 20
+        };
+        recorder.DataAvailable += WaveIn_DataAvailable;
+        recorder.StartRecording();
     }
 }

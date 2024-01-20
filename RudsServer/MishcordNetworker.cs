@@ -15,7 +15,8 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
     public bool sendEnable = true, acceptEnable = true;
 
     public Queue<string> CommandBuffer = new();
-    public Queue<Guid> AppendChanelBuffer = new();
+    public Queue<Guid> AppendChanelBuffer = new(), BackwardAppendChanelBuffer = new();
+    public Guid currentNewClient;
 
     public void Start()
     {
@@ -50,6 +51,7 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
         else if (initMessage.StartsWith("sound chanel source"))
         {
             var currentId = new Guid(initBuffer[19..(19 + 16)]);
+            currentNewClient = currentId;
             clients[currentId].SoundStream = clientStream;
             Console.WriteLine($"{currentId} client sound chanel source connected!");
             AppendChanelBuffer.Clear();
@@ -60,15 +62,28 @@ public class MishcordNetworker(TimeSpan updateRate) : IDisposable
                 AppendChanelBuffer.Enqueue(idClient.Key);
             }
 
+            BackwardAppendChanelBuffer = new Queue<Guid>(AppendChanelBuffer);
             if (AppendChanelBuffer.Count != 0)
                 clients[currentId].Send("generate in chanel"u8.ToArray());
         }
         else if (initMessage.StartsWith("sound chanel resend"))
         {
             var currentId = new Guid(initBuffer[19..(19 + 16)]);
-            clients[AppendChanelBuffer.Dequeue()].AppendSoundEndPoint(clientStream, currentId);
             if (AppendChanelBuffer.Count != 0)
-                clients[currentId].Send("generate in chanel"u8.ToArray());
+            {
+                clients[AppendChanelBuffer.Dequeue()].AppendSoundEndPoint(clientStream, currentId);
+                if (AppendChanelBuffer.Count != 0)
+                    clients[currentId].Send("generate in chanel"u8.ToArray());
+                else
+                    clients[BackwardAppendChanelBuffer.Dequeue()].Send("generate in chanel"u8.ToArray());
+            }
+
+            else if (BackwardAppendChanelBuffer.Count >= 0)
+            {
+                clients[currentNewClient].AppendSoundEndPoint(clientStream, currentId);
+                if (BackwardAppendChanelBuffer.Count != 0)
+                    clients[BackwardAppendChanelBuffer.Dequeue()].Send("generate in chanel"u8.ToArray());
+            }
         }
     }
 
@@ -117,6 +132,24 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host, Guid ident
     public void Run()
     {
         Task.Run(HandleNetwork);
+        Task.Run(HandleSound);
+    }
+
+    private void HandleSound()
+    {
+        var soundInBuffer = new byte[2048];
+        var lastRead = 0;
+        while (SoundStream is null) ;
+        while (SoundStream.Socket.Connected)
+        {
+            lastRead = SoundStream.Read(soundInBuffer, 0, 2048);
+            if(SoundEndPoints.Count == 0)
+                continue;
+            foreach (var endPoint in SoundEndPoints)
+            {
+                endPoint.Value.Write(soundInBuffer, 0, lastRead);
+            }
+        }
     }
 
     void HandleNetwork()
@@ -163,6 +196,5 @@ public class RemoteClient(NetworkStream user, MishcordNetworker host, Guid ident
     public void AppendSoundEndPoint(NetworkStream stream, Guid id)
     {
         SoundEndPoints.Add(id, stream);
-        SoundStream.CopyTo(stream);
     }
 }
